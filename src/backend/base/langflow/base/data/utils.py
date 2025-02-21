@@ -3,12 +3,17 @@ from collections.abc import Callable
 from concurrent import futures
 from pathlib import Path
 
+
 import chardet
 import orjson
-import yaml
+import torch
+import whisper
 from defusedxml import ElementTree
-
 from langflow.schema import Data
+import yaml
+
+
+
 
 # Types of files that can be read simply by file.read()
 # and have 100% to be completely readable
@@ -34,6 +39,7 @@ TEXT_FILE_TYPES = [
 ]
 
 IMG_FILE_TYPES = ["jpg", "jpeg", "png", "bmp", "image"]
+AUDIO_FILE_TYPES = ["mp3", "wav"]  # New audio input types
 
 
 def normalize_text(text):
@@ -60,16 +66,15 @@ def format_directory_path(path: str) -> str:
 # calls this function without keyword arguments
 def retrieve_file_paths(
     path: str,
-    load_hidden: bool,  # noqa: FBT001
-    recursive: bool,  # noqa: FBT001
+    load_hidden: bool,
+    recursive: bool,
     depth: int,
-    types: list[str] = TEXT_FILE_TYPES,
+    types: list[str] = TEXT_FILE_TYPES + AUDIO_FILE_TYPES,
 ) -> list[str]:
     path = format_directory_path(path)
     path_obj = Path(path)
     if not path_obj.exists() or not path_obj.is_dir():
-        msg = f"Path {path} must exist and be a directory."
-        raise ValueError(msg)
+        raise ValueError(f"Path {path} must exist and be a directory.")
 
     def match_types(p: Path) -> bool:
         return any(p.suffix == f".{t}" for t in types) if types else True
@@ -134,13 +139,21 @@ def parse_pdf_to_text(file_path: str) -> str:
         reader = PdfReader(f)
         return "\n\n".join([page.extract_text() for page in reader.pages])
 
+def parse_audio_to_text(file_path: str) -> str:
+    """Transcribes audio files to text using Whisper."""
+    model = whisper.load_model("large")  # Use "tiny", "base", "small", "medium", "large" as needed
+    result = model.transcribe(file_path)
+    return result["text"]
 
 def parse_text_file_to_data(file_path: str, *, silent_errors: bool) -> Data | None:
+    """Processes different file types and returns structured Data."""
     try:
         if file_path.endswith(".pdf"):
             text = parse_pdf_to_text(file_path)
         elif file_path.endswith(".docx"):
             text = read_docx_file(file_path)
+        elif file_path.endswith(tuple(AUDIO_FILE_TYPES)):  # Process audio files
+            text = parse_audio_to_text(file_path)
         else:
             text = read_text_file(file_path)
 
@@ -160,13 +173,10 @@ def parse_text_file_to_data(file_path: str, *, silent_errors: bool) -> Data | No
             text = ElementTree.tostring(xml_element, encoding="unicode")
     except Exception as e:
         if not silent_errors:
-            msg = f"Error loading file {file_path}: {e}"
-            raise ValueError(msg) from e
+            raise ValueError(f"Error loading file {file_path}: {e}") from e
         return None
 
     return Data(data={"file_path": file_path, "text": text})
-
-
 # ! Removing unstructured dependency until
 # ! 3.12 is supported
 # def get_elements(
