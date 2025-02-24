@@ -34,6 +34,7 @@ TEXT_FILE_TYPES = [
 ]
 
 IMG_FILE_TYPES = ["jpg", "jpeg", "png", "bmp", "image"]
+AUDIO_FILE_TYPES = ["mp3", "wav"]
 
 
 def normalize_text(text):
@@ -63,7 +64,7 @@ def retrieve_file_paths(
     load_hidden: bool,  # noqa: FBT001
     recursive: bool,  # noqa: FBT001
     depth: int,
-    types: list[str] = TEXT_FILE_TYPES,
+    types: list[str] = TEXT_FILE_TYPES,+ AUDIO_FILE_TYPES,
 ) -> list[str]:
     path = format_directory_path(path)
     path_obj = Path(path)
@@ -137,6 +138,8 @@ def parse_pdf_to_text(file_path: str) -> str:
 
 def parse_text_file_to_data(file_path: str, *, silent_errors: bool) -> Data | None:
     try:
+        if file_path.endswith(tuple(AUDIO_FILE_TYPES )):
+            return Data(data={"file_path": file_path, "text": None})
         if file_path.endswith(".pdf"):
             text = parse_pdf_to_text(file_path)
         elif file_path.endswith(".docx"):
